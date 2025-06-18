@@ -1,6 +1,5 @@
 import os
 import subprocess
-from sys import stderr, stdout
 
 
 def run_python_file(working_directory, file_path):
