@@ -25,6 +25,7 @@ if verbose:
     print(f"User prompt: {user_prompt}\n")
 
 messages = [types.Content(role="user", parts=[types.Part(text=user_prompt)])]
+
 system_prompt = """
 You are a helpful AI coding agent.
 
@@ -112,36 +113,61 @@ available_functions = types.Tool(
 def generate_response(
     client: genai.Client, messages: list[types.Content], verbose: bool = False
 ):
-    response = client.models.generate_content(
-        model=model_name,
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt
-        ),
-    )
+    for _ in range(20):
+        response = client.models.generate_content(
+            model=model_name,
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions], system_instruction=system_prompt
+            ),
+        )
 
-    if response.usage_metadata is not None:
-        token_count = response.usage_metadata.prompt_token_count
-        response_tokens = response.usage_metadata.candidates_token_count
+        if response.usage_metadata is not None:
+            token_count = response.usage_metadata.prompt_token_count
+            response_tokens = response.usage_metadata.candidates_token_count
+        else:
+            token_count = 0
+            response_tokens = 0
 
-    if verbose:
-        print(f"Prompt tokens: {token_count}")
-        print(f"Response tokens: {response_tokens}")
+        if verbose:
+            print(f"Prompt tokens: {token_count}")
+            print(f"Response tokens: {response_tokens}")
 
-    if not response.function_calls:
-        return response.text
+        if not response.function_calls:
+            return response.text
 
-    for function_call_part in response.function_calls:
-        print(f"Calling function: {function_call_part.name}({function_call_part.args})")
-        function_call_result = call_function(function_call_part, verbose=verbose)
-        try:
-            function_call_response = function_call_result.parts[
-                0
-            ].function_response.response
-            if verbose:
-                print(f"-> {function_call_response}")
-        except Exception as e:
-            print(f"Error: {e}")
+        response_parts = []
+        for function_call_part in response.function_calls:
+            print(
+                f"Calling function: {function_call_part.name}({
+                    function_call_part.args
+                })"
+            )
+            function_call_result = call_function(function_call_part, verbose=verbose)
+            try:
+                function_call_response = function_call_result.parts[  # type: ignore
+                    0
+                ].function_response.response  # type: ignore
+                if verbose:
+                    print(f"-> {function_call_response}")
+            except Exception as e:
+                print(f"Error: {e}")
+            response_parts.append(function_call_result.parts[0])
+
+        bundled_response = types.Content(parts=response_parts)
+
+        if response.candidates is None:
+            continue
+
+        for candidate in response.candidates:
+            if candidate.content is None:
+                continue
+
+            messages.append(candidate.content)
+
+        messages.append(bundled_response)
 
 
-response = generate_response(client, messages, verbose)
+if __name__ == "__main__":
+    response = generate_response(client, messages, verbose)
+    print(response)
